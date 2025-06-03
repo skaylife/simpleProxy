@@ -1,8 +1,6 @@
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
 import httpx
-import base64
 
 app = FastAPI()
 
@@ -15,17 +13,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-USERNAME = "proxyuser"
-PASSWORD = "proxypass"
-
-# Middleware для проверки Basic Auth
-
-
 @app.get("/proxy")
 async def proxy(url: str):
     try:
         async with httpx.AsyncClient() as client:
             r = await client.get(url)
-            return {"status": r.status_code, "headers": dict(r.headers), "text": r.text}
+            return {
+                "status": r.status_code,
+                "headers": dict(r.headers),
+                "text": r.text
+            }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
