@@ -1,44 +1,48 @@
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 import httpx
 import base64
 
 app = FastAPI()
 
-# CORS (если нужно проверять из браузера)
+# Настройка CORS (если нужно)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Простые учетные данные
-USERNAME = "user"
-PASSWORD = "pass"
+USERNAME = "proxyuser"
+PASSWORD = "proxypass"
 
-@app.middleware("http")
-async def auth_proxy(request: Request, call_next):
-    auth_header = request.headers.get("authorization")
-    expected = "Basic " + base64.b64encode(f"{USERNAME}:{PASSWORD}".encode()).decode()
+# Middleware для проверки Basic Auth
+class AuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        auth = request.headers.get("authorization")
+        if not auth or not auth.startswith("Basic "):
+            raise HTTPException(status_code=401, detail="Unauthorized")
 
-    if auth_header != expected:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+        try:
+            credentials = base64.b64decode(auth.split(" ")[1]).decode("utf-8")
+            username, password = credentials.split(":")
+        except:
+            raise HTTPException(status_code=401, detail="Unauthorized")
 
-    # Получаем URL из параметра запроса
-    target_url = request.query_params.get("url")
-    if not target_url:
-        raise HTTPException(status_code=400, detail="Missing 'url' parameter")
+        if username != USERNAME or password != PASSWORD:
+            raise HTTPException(status_code=401, detail="Unauthorized")
 
-    # Проксируем запрос
+        return await call_next(request)
+
+app.add_middleware(AuthMiddleware)
+
+@app.get("/proxy")
+async def proxy(url: str):
     try:
         async with httpx.AsyncClient() as client:
-            proxy_response = await client.get(target_url)
-        return Response(
-            content=proxy_response.content,
-            status_code=proxy_response.status_code,
-            headers=proxy_response.headers,
-        )
+            r = await client.get(url)
+            return {"status": r.status_code, "headers": dict(r.headers), "text": r.text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
